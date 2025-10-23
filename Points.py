@@ -23,11 +23,13 @@ EXECUT_TODO_URI = f'{HOST}/process/ho-schedule/execute'
 def send(title, message):
     print(f"{title}: {message}")
 # 推送 功能
-def push_dt(dingtalk, msg,atAll):
+def push_dt(dingtalk, msg,atAll,type):
     try:
         webhook = 'https://oapi.dingtalk.com/robot/send?access_token='+dingtalk
 
         dingTalk = DingtalkChatbot(webhook,fail_notice=True)
+        if type == 1:
+            dingTalk.send_text(msg, is_at_all=atAll)
         # Markdown消息@所有人
         dingTalk.send_markdown(title="ZUOBIAO", text=msg,
             is_at_all=atAll)
@@ -108,7 +110,7 @@ class ZuoBiao:
             response = requests.post(url=DOCUMENT_RECORD_URI, headers=self.headers, json=param).json()
             if response.get('code') == '1000':
                 send('✅记录成功', f'文章标题：{document["title"]}')
-                push_dt(self.param.get('dingtalk'),'✅记录成功'+'\n'+f'文章标题：{document["title"]}',False)
+                push_dt(self.param.get('dingtalk'),'✅记录成功'+'\n'+f'文章标题：{document["title"]}',False,1)
             else:
                 send('❌记录失败', f'文章标题：{document["title"]}')
             time.sleep(30) # 休眠30秒
@@ -155,7 +157,7 @@ class ZuoBiao:
             response = requests.post(url=EXECUT_TODO_URI, headers=self.headers, json=self.todo).json()
             if response.get('code') == '1000':
                 send('✅代办任务成功', f'任务名称：{todoRecord["title"]}')
-                push_dt(self.param.get('dingtalk'),'✅代办任务成功'+'\n'+f'任务名称：{todoRecord["title"]}',False)
+                push_dt(self.param.get('dingtalk'),'✅代办任务成功'+'\n'+f'任务名称：{todoRecord["title"]}',False,1)
             else:
                 send('❌代办任务失败', f'任务名称：{todoRecord["title"]}')
             time.sleep(20) # 休眠20秒
@@ -212,7 +214,7 @@ def main():
          # 登录
         log = f"完成🙍🏻‍♂️ 第{i + 1}个"+ZuoBiao(_check_item).do_login()
         
-        push_dt(_check_item['dingtalk'],log,True)
+        push_dt(_check_item['dingtalk'],log,True,2)
         msg += log + "\n"
         
         i += 1
