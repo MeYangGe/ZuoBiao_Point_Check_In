@@ -16,7 +16,8 @@
   "ZUOBIAO": [
             {
                 "account": "XXXX",
-                "password": "XXXX"
+                "password": "XXXX",
+                "dingtalk": "XXXX"
             }
         ]
 }
