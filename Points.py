@@ -264,14 +264,48 @@ class ZuoBiao:
         }
         #请求文章连接
         send("开始请求获取帖子",self.headers)
-        response = requests.post(url=GET_DOCUMENT_ID_URI, headers=self.headers, params=param).json()
-        send("开始结束获取帖子，返回值",response)
-        if response.get("map"):
-            self.documents = response['map']['rows']
-            self.set_document_record()
-            return True, self.documents
-        else:
-            return False, response["message"]
+        
+        try:
+            response = requests.post(url=GET_DOCUMENT_ID_URI, headers=self.headers, params=param, timeout=30)
+            
+            # 检查响应状态
+            if response.status_code != 200:
+                error_msg = f"获取文章列表失败，状态码: {response.status_code}"
+                print(error_msg)
+                return False, error_msg
+            
+            # 检查响应内容
+            response_text = response.text.strip()
+            if not response_text:
+                error_msg = "收到空响应"
+                print(error_msg)
+                return False, error_msg
+            
+            # 尝试解析JSON
+            try:
+                response_json = response.json()
+                send("获取帖子返回值", response_json)
+            except json.JSONDecodeError as e:
+                error_msg = f"JSON解析失败: {e}"
+                print(f"{error_msg}\n原始响应: {response_text[:200]}...")
+                return False, error_msg
+            
+            if response_json.get("map"):
+                self.documents = response_json['map']['rows']
+                self.set_document_record()
+                return True, self.documents
+            else:
+                error_msg = response_json.get("message", "未知错误")
+                return False, error_msg
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"网络请求异常: {str(e)}"
+            print(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"未知错误: {str(e)}"
+            print(error_msg)
+            return False, error_msg
     def get_todo_id(self):
         '''
         获取代办任务
@@ -281,15 +315,48 @@ class ZuoBiao:
         send("开始请求获取代办",self.headers)
         self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
 
-        #请求代办连接
-        response = requests.get(url=GET_TODO_URI, headers=self.headers).json()
-        send("开始请求获取代办响应",response)
-        if response.get('code') == '1000':
-            self.todoList = response['data']
-            self.set_todo_record()
-            return True, self.todoList
-        else:
-            return False, response["message"]
+        try:
+            #请求代办连接
+            response = requests.get(url=GET_TODO_URI, headers=self.headers, timeout=30)
+            
+            # 检查响应状态
+            if response.status_code != 200:
+                error_msg = f"获取代办任务失败，状态码: {response.status_code}"
+                print(error_msg)
+                return False, error_msg
+            
+            # 检查响应内容
+            response_text = response.text.strip()
+            if not response_text:
+                error_msg = "收到空响应"
+                print(error_msg)
+                return False, error_msg
+            
+            # 尝试解析JSON
+            try:
+                response_json = response.json()
+                send("开始请求获取代办响应", response_json)
+            except json.JSONDecodeError as e:
+                error_msg = f"JSON解析失败: {e}"
+                print(f"{error_msg}\n原始响应: {response_text[:200]}...")
+                return False, error_msg
+            
+            if response_json.get('code') == '1000':
+                self.todoList = response_json['data']
+                self.set_todo_record()
+                return True, self.todoList
+            else:
+                error_msg = response_json.get("message", "未知错误")
+                return False, error_msg
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"网络请求异常: {str(e)}"
+            print(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"未知错误: {str(e)}"
+            print(error_msg)
+            return False, error_msg
     def set_todo_record(self):
         '''
         写阅读记录
@@ -313,14 +380,37 @@ class ZuoBiao:
         self.headers.pop('Cookie', None)  # 移除旧的Cookie
         # 为登录请求更新伪装IP
         self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
-        data = {'loginName': {self.param.get('account')}, 'password': self.param.get('password')}
+        
+        # 修复：将loginName改为字符串而不是集合
+        data = {'loginName': self.param.get('account'), 'password': self.param.get('password')}
 
         try:
-            response = requests.post(LOGIN_URI, headers=self.headers, data=data)
-            send("登录头",self.headers)
-            send("登录数据",data)
-            send("登录信息",response)
-            response.raise_for_status()  # 如果请求失败（如4xx或5xx错误），则抛出异常
+            response = requests.post(LOGIN_URI, headers=self.headers, data=data, timeout=30)
+            send("登录头", self.headers)
+            send("登录数据", data)
+            send("登录状态码", response.status_code)
+            send("登录响应头", dict(response.headers))
+            
+            # 检查响应状态
+            if response.status_code != 200:
+                print(f"账号 [{self.param.get('account')}] 登录请求失败，状态码: {response.status_code}")
+                return f"账号 [{self.param.get('account')}] 登录失败，状态码: {response.status_code}"
+            
+            # 检查响应内容
+            response_text = response.text.strip()
+            if not response_text:
+                print(f"账号 [{self.param.get('account')}] 收到空响应")
+                return f"账号 [{self.param.get('account')}] 收到空响应"
+            
+            # 尝试解析JSON
+            try:
+                response_json = response.json()
+                send("登录响应", response_json)
+            except json.JSONDecodeError as e:
+                print(f"账号 [{self.param.get('account')}] JSON解析失败: {e}")
+                print(f"原始响应内容: {response_text[:200]}...")  # 只显示前200字符
+                return f"账号 [{self.param.get('account')}] JSON解析失败"
+            
             set_cookie_headers = response.headers.get('set-cookie')
             if set_cookie_headers:
                 # 使用正则表达式从set-cookie头中提取SESSION和zb_sid
@@ -337,16 +427,29 @@ class ZuoBiao:
                     send("开始贴子","1111111111111111")
                     self.get_document_id() #开始获取帖子
                     send("开始待办","1111111111111111")
-                    self.get_todo_id() #开始获取帖子
+                    self.get_todo_id() #开始获取待办
                     return f"账号 [{self.param.get('account')}]"
 
                 else:
                     print(f"账号 [{self.param.get('account')}] 的Cookie解析失败，未找到SESSION或zb_sid。")
                     print(f"原始Set-Cookie头: {set_cookie_headers}")
-                    return f"账号 [{self.param.get('account')}]"
+                    return f"账号 [{self.param.get('account')}] Cookie解析失败"
+            else:
+                print(f"账号 [{self.param.get('account')}] 未收到Cookie信息")
+                return f"账号 [{self.param.get('account')}] 未收到Cookie"
+                
+        except requests.exceptions.Timeout:
+            print(f"账号 [{self.param.get('account')}] 登录请求超时")
+            return f"账号 [{self.param.get('account')}] 请求超时"
+        except requests.exceptions.ConnectionError:
+            print(f"账号 [{self.param.get('account')}] 连接错误")
+            return f"账号 [{self.param.get('account')}] 连接错误"
         except requests.exceptions.RequestException as e:
             print(f"账号 [{self.param.get('account')}] 刷新Cookie时出错: {e}")
-        return f"账号 [{self.param.get('account')}]"
+            return f"账号 [{self.param.get('account')}] 请求异常: {str(e)}"
+        except Exception as e:
+            print(f"账号 [{self.param.get('account')}] 发生未知错误: {e}")
+            return f"账号 [{self.param.get('account')}] 未知错误: {str(e)}"
 
 def main():
     '''
