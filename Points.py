@@ -312,6 +312,9 @@ class ZuoBiao:
 
         try:
             response = requests.post(LOGIN_URI, headers=self.headers, data=data)
+            send("登录头",self.headers)
+            send("登录数据",data)
+            send("登录信息",response)
             response.raise_for_status()  # 如果请求失败（如4xx或5xx错误），则抛出异常
             set_cookie_headers = response.headers.get('set-cookie')
             if set_cookie_headers:
