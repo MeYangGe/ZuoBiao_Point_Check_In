@@ -25,7 +25,7 @@ class IPSpoofer:
     '''
     IP伪装工具类，用于生成随机IP地址和伪装HTTP请求头
     '''
-    
+
     def __init__(self):
         '''初始化IP伪装器'''
         self.ip_pool = []
@@ -40,7 +40,7 @@ class IPSpoofer:
             'Mozilla/5.0 (iPad; CPU OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
         ]
         self.generate_ip_pool()
-    
+
     def generate_random_ip(self):
         '''
         生成随机IP地址
@@ -59,23 +59,23 @@ class IPSpoofer:
             [34, 36],        # Google IP段
             [108, 110]       # 美国IP段
         ]
-        
+
         # 随机选择一个IP段
         segment = random.choice(ip_segments)
         first_octet = random.randint(segment[0], segment[1])
         second_octet = random.randint(0, 255)
         third_octet = random.randint(0, 255)
         fourth_octet = random.randint(1, 254)  # 避免0和255
-        
+
         return f"{first_octet}.{second_octet}.{third_octet}.{fourth_octet}"
-    
+
     def generate_ip_pool(self, pool_size=50):
         '''
         生成IP池
         :param pool_size: IP池大小
         '''
         self.ip_pool = [self.generate_random_ip() for _ in range(pool_size)]
-    
+
     def get_random_ip(self):
         '''
         从IP池中获取随机IP
@@ -84,14 +84,14 @@ class IPSpoofer:
         if not self.ip_pool:
             self.generate_ip_pool()
         return random.choice(self.ip_pool)
-    
+
     def get_random_user_agent(self):
         '''
         获取随机User-Agent
         :return: User-Agent字符串
         '''
         return random.choice(self.user_agents)
-    
+
     def generate_spoofed_headers(self, base_headers=None):
         '''
         生成伪装的HTTP请求头
@@ -100,7 +100,7 @@ class IPSpoofer:
         '''
         # 生成随机IP
         random_ip = self.get_random_ip()
-        
+
         # 基础请求头
         headers = {
             'Accept': 'application/json, text/plain, */*',
@@ -119,7 +119,7 @@ class IPSpoofer:
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Site': 'same-origin'
         }
-        
+
         # 添加IP伪装相关头部
         ip_headers = {
             'X-Forwarded-For': random_ip,
@@ -133,14 +133,14 @@ class IPSpoofer:
             'Via': f'1.1 {random_ip}',
             'Forwarded': f'for={random_ip};proto=http;by={random_ip}'
         }
-        
+
         # 合并请求头
         if base_headers:
             headers.update(base_headers)
         headers.update(ip_headers)
-        
+
         return headers
-    
+
     def update_request_headers(self, session_or_headers):
         '''
         更新请求的头部信息
@@ -168,25 +168,25 @@ def push_dt(dingtalk, msg,atAll,type):
             dingTalk.send_text(msg, is_at_all=atAll)
         # Markdown消息@所有人
         dingTalk.send_markdown(title="ZUOBIAO", text=msg,
-            is_at_all=atAll)
+                               is_at_all=atAll)
     except Exception as e:
         error_traceback = traceback.format_exc()
         print(error_traceback)
 # 获取环境变量 
-def get_env(): 
+def get_env():
     #判断 COOKIE_ZUOBIAO否存在于环境变量 
-    if "ZUOBIAO" in os.environ: 
+    if "ZUOBIAO" in os.environ:
         # 读取系统变量以 \n 或 && 分割变量 
         cookie_list = os.environ.get('ZUOBIAO')
-    else: 
+    else:
         # 标准日志输出 
-        print('❌未添加ZUOBIAO变量') 
-        send('坐标自动刷积分', '❌未添加ZUOBIAO变量') 
+        print('❌未添加ZUOBIAO变量')
+        send('坐标自动刷积分', '❌未添加ZUOBIAO变量')
 
         # 脚本退出 
-        sys.exit(0) 
+        sys.exit(0)
 
-    return cookie_list 
+    return cookie_list
 
 
 # 其他代码...
@@ -237,8 +237,8 @@ class ZuoBiao:
             # 为每个请求更新伪装IP
             self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
             param = {
-              'documentId': document['id'],
-              'type': '0'
+                'documentId': document['id'],
+                'type': '0'
             }
             response = requests.post(url=DOCUMENT_RECORD_URI, headers=self.headers, json=param).json()
             if response.get('code') == '1000':
@@ -255,7 +255,7 @@ class ZuoBiao:
         '''
         # 更新请求头以使用新的伪装IP
         self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
-        
+        send("开始获取帖子",self.headers)
         param = {
             "pageNum": self.pageNum,
             "pageSize": 50,
@@ -263,7 +263,9 @@ class ZuoBiao:
             "secondarySort": 'createdTime',
         }
         #请求文章连接
+        send("开始请求获取帖子",self.headers)
         response = requests.post(url=GET_DOCUMENT_ID_URI, headers=self.headers, params=param).json()
+        send("开始结束获取帖子，返回值",response)
         if response.get("map"):
             self.documents = response['map']['rows']
             self.set_document_record()
@@ -276,9 +278,12 @@ class ZuoBiao:
         :return: 返回所有代办任务id
         '''
         # 更新请求头以使用新的伪装IP
+        send("开始请求获取代办",self.headers)
         self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
+
         #请求代办连接
         response = requests.get(url=GET_TODO_URI, headers=self.headers).json()
+        send("开始请求获取代办响应",response)
         if response.get('code') == '1000':
             self.todoList = response['data']
             self.set_todo_record()
@@ -325,11 +330,13 @@ class ZuoBiao:
                 if session_match and zbsid_match:
                     session_val = session_match.group(1)
                     zbsid_val = zbsid_match.group(1)
-                    
+
                     my_cookie = f"SESSION={session_val}; zb_sid={zbsid_val}"
                     print(f'账号 [{self.param.get("account")}] 的Cookie刷新成功！')
                     self.headers['Cookie'] = my_cookie
+                    send("开始贴子","1111111111111111")
                     self.get_document_id() #开始获取帖子
+                    send("开始待办","1111111111111111")
                     self.get_todo_id() #开始获取帖子
                     return f"账号 [{self.param.get('account')}]"
 
@@ -355,13 +362,13 @@ def main():
     i = 0
     for i in range(len(datas.get("ZUOBIAO", []))):
         _check_item = datas.get("ZUOBIAO", [])[i]
-         # 开始任务
-         # 登录
+        # 开始任务
+        # 登录
         log = f"完成🙍🏻‍♂️ 第{i + 1}个"+ZuoBiao(_check_item).do_login()
-        
+
         push_dt(_check_item['dingtalk'],log,True,2)
         msg += log + "\n"
-        
+
         i += 1
     try:
         send('开始', msg)
