@@ -1,12 +1,10 @@
-
 import requests
 import re
 import time
 import os
-import sys
 import json
-import traceback
 import random
+import ipaddress
 from dingtalkchatbot.chatbot import DingtalkChatbot
 
 
@@ -19,7 +17,9 @@ GET_INFO_URI = f'{HOST}/process/score/info'
 GET_TODO_URI = f'{HOST}/process/ho-schedule/dealScheduleList?type=1'
 EXECUT_TODO_URI = f'{HOST}/process/ho-schedule/execute'
 # --- HTTP 请求头 ---
-
+# 替代 notify 功能
+def send(title, message):
+    print(f"{title}: {message}")
 
 class IPSpoofer:
     '''
@@ -41,33 +41,46 @@ class IPSpoofer:
         ]
         self.generate_ip_pool()
 
+    def _is_public_ipv4(self, ip_str: str) -> bool:
+        ip_obj = ipaddress.ip_address(ip_str)
+        return (
+                ip_obj.version == 4
+                and not ip_obj.is_private
+                and not ip_obj.is_loopback
+                and not ip_obj.is_multicast
+                and not ip_obj.is_reserved
+                and not ip_obj.is_link_local
+        )
+
     def generate_random_ip(self):
         '''
-        生成随机IP地址
+        生成随机公网IP地址
         :return: 随机IP地址字符串
         '''
-        # 生成常见的公网IP段
         ip_segments = [
-            [102, 109],      # 常见美国IP段
-            [104, 107],      # 美国IP段
-            [172, 174],      # 美国IP段
-            [185, 187],      # 欧洲IP段
-            [45, 47],        # 美国IP段
-            [52, 54],        # AWS IP段
-            [13, 15],        # Amazon IP段
-            [20, 22],        # Microsoft IP段
-            [34, 36],        # Google IP段
-            [108, 110]       # 美国IP段
+            [8, 8],
+            [13, 15],
+            [20, 22],
+            [34, 36],
+            [45, 47],
+            [52, 54],
+            [102, 109],
+            [104, 107],
+            [108, 110],
+            [185, 187]
         ]
 
-        # 随机选择一个IP段
-        segment = random.choice(ip_segments)
-        first_octet = random.randint(segment[0], segment[1])
-        second_octet = random.randint(0, 255)
-        third_octet = random.randint(0, 255)
-        fourth_octet = random.randint(1, 254)  # 避免0和255
+        for _ in range(20):
+            segment = random.choice(ip_segments)
+            first_octet = random.randint(segment[0], segment[1])
+            second_octet = random.randint(0, 255)
+            third_octet = random.randint(0, 255)
+            fourth_octet = random.randint(1, 254)
+            ip_str = f"{first_octet}.{second_octet}.{third_octet}.{fourth_octet}"
+            if self._is_public_ipv4(ip_str):
+                return ip_str
 
-        return f"{first_octet}.{second_octet}.{third_octet}.{fourth_octet}"
+        return "8.8.8.8"
 
     def generate_ip_pool(self, pool_size=50):
         '''
@@ -94,102 +107,31 @@ class IPSpoofer:
 
     def generate_spoofed_headers(self, base_headers=None):
         '''
-        生成伪装的HTTP请求头
+        生成伪装的HTTP请求头（每次都从干净模板生成）
         :param base_headers: 基础请求头
         :return: 包含伪装信息的请求头字典
         '''
-        # 生成随机IP
         random_ip = self.get_random_ip()
 
-        # 基础请求头
         headers = {
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache',
-            'Upgrade-Insecure-Requests': '1',
             'User-Agent': self.get_random_user_agent(),
-            'Host': 'teamwork.cnhis.cc',
             'Connection': 'keep-alive',
-            'Sec-Ch-Ua': '"Microsoft Edge";v="123", "Not:A-Brand";v="8", "Chromium";v="123"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-origin'
-        }
-
-        # 添加IP伪装相关头部
-        ip_headers = {
             'X-Forwarded-For': random_ip,
             'X-Real-IP': random_ip,
-            'X-Originating-IP': random_ip,
-            'X-Remote-IP': random_ip,
-            'X-Client-IP': random_ip,
-            'True-Client-IP': random_ip,
-            'CF-Connecting-IP': random_ip,
-            'Fastly-Client-IP': random_ip,
-            'Via': f'1.1 {random_ip}',
-            'Forwarded': f'for={random_ip};proto=http;by={random_ip}'
+            'Forwarded': f'for={random_ip};proto=https'
         }
 
-        # 合并请求头
         if base_headers:
             headers.update(base_headers)
-        headers.update(ip_headers)
 
         return headers
 
-    def update_request_headers(self, session_or_headers):
-        '''
-        更新请求的头部信息
-        :param session_or_headers: requests.Session对象或headers字典
-        :return: 更新后的对象
-        '''
-        if isinstance(session_or_headers, dict):
-            return self.generate_spoofed_headers(session_or_headers)
-        elif hasattr(session_or_headers, 'headers'):
-            session_or_headers.headers.update(self.generate_spoofed_headers())
-            return session_or_headers
-        else:
-            raise ValueError("参数必须是dict类型或具有headers属性的对象")
 
-# 替代 notify 功能
-def send(title, message):
-    print(f"{title}: {message}")
-# 推送 功能
-def push_dt(dingtalk, msg,atAll,type):
-    try:
-        webhook = 'https://oapi.dingtalk.com/robot/send?access_token='+dingtalk
-
-        dingTalk = DingtalkChatbot(webhook,fail_notice=True)
-        if type == 1:
-            dingTalk.send_text(msg, is_at_all=atAll)
-        # Markdown消息@所有人
-        dingTalk.send_markdown(title="ZUOBIAO", text=msg,
-                               is_at_all=atAll)
-    except Exception as e:
-        error_traceback = traceback.format_exc()
-        print(error_traceback)
-# 获取环境变量 
-def get_env():
-    #判断 COOKIE_ZUOBIAO否存在于环境变量 
-    if "ZUOBIAO" in os.environ:
-        # 读取系统变量以 \n 或 && 分割变量 
-        cookie_list = os.environ.get('ZUOBIAO')
-    else:
-        # 标准日志输出 
-        print('❌未添加ZUOBIAO变量')
-        send('坐标自动刷积分', '❌未添加ZUOBIAO变量')
-
-        # 脚本退出 
-        sys.exit(0)
-
-    return cookie_list
-
-
-# 其他代码...
+# ... existing code ...
 
 class ZuoBiao:
     '''
@@ -202,19 +144,28 @@ class ZuoBiao:
         '''
         self.param = user_data
         self.pageNum = os.environ.get('PageNum')
-        self.todo = { "id": "", "status": 2, "description": "", "fj": "[]" }
-        # 初始化IP伪装器
+        self.todo = {"id": "", "status": 2, "description": "", "fj": "[]"}
         self.ip_spoofer = IPSpoofer()
-        # 生成初始伪装请求头
-        self.headers = self.ip_spoofer.generate_spoofed_headers({
+        self.cookie = None
+        self.base_headers = {
             'Origin': 'https://teamwork.cnhis.cc',
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Sec-Fetch-Site': 'same-origin'
-        })
+            'Referer': 'https://teamwork.cnhis.cc/'
+        }
+        self.headers = self.ip_spoofer.generate_spoofed_headers(self.base_headers)
+
+    def _refresh_headers(self, content_type=None):
+        base = dict(self.base_headers)
+        if content_type:
+            base['Content-Type'] = content_type
+        if self.cookie:
+            base['Cookie'] = self.cookie
+        self.headers = self.ip_spoofer.generate_spoofed_headers(base)
+
     def getInfo_uri(self):
-        # 更新请求头以使用新的伪装IP
-        self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
-        return requests.get(GET_INFO_URI, self.headers).json()['data']['totalScore']
+        self._refresh_headers()
+        return requests.get(GET_INFO_URI, headers=self.headers, timeout=30).json()['data']['totalScore']
+
     def convert_bytes(self, b):
         '''
         将字节转换为 MB GB TB
@@ -232,56 +183,47 @@ class ZuoBiao:
         '''
         写阅读记录
         '''
-        self.headers['Content-Type']= 'application/json;charset=utf-8'
         for document in self.documents:
-            # 为每个请求更新伪装IP
-            self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
+            self._refresh_headers(content_type='application/json;charset=utf-8')
             param = {
                 'documentId': document['id'],
                 'type': '0'
             }
-            response = requests.post(url=DOCUMENT_RECORD_URI, headers=self.headers, json=param).json()
+            response = requests.post(url=DOCUMENT_RECORD_URI, headers=self.headers, json=param, timeout=30).json()
             if response.get('code') == '1000':
                 send('✅记录成功', f'文章标题：{document["title"]}')
-                #push_dt(self.param.get('dingtalk'),'✅记录成功'+'\n'+f'文章标题：{document["title"]}',False,1)
             else:
                 send('❌记录失败', f'文章标题：{document["title"]}')
-            time.sleep(30) # 休眠30秒
+            time.sleep(30)
 
     def get_document_id(self):
         '''
         获取文章
         :return: 返回所有文章
         '''
-        # 更新请求头以使用新的伪装IP
-        self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
-        send("开始获取帖子",self.headers)
+        self._refresh_headers(content_type='application/x-www-form-urlencoded')
+        send("开始获取帖子", self.headers)
         param = {
             "pageNum": self.pageNum,
             "pageSize": 50,
             "orderBy": 'asc',
             "secondarySort": 'createdTime',
         }
-        #请求文章连接
-        send("开始请求获取帖子",self.headers)
-        
+        send("开始请求获取帖子", self.headers)
+
         try:
             response = requests.post(url=GET_DOCUMENT_ID_URI, headers=self.headers, params=param, timeout=30)
-            
-            # 检查响应状态
             if response.status_code != 200:
                 error_msg = f"获取文章列表失败，状态码: {response.status_code}"
                 print(error_msg)
                 return False, error_msg
-            
-            # 检查响应内容
+
             response_text = response.text.strip()
             if not response_text:
                 error_msg = "收到空响应"
                 print(error_msg)
                 return False, error_msg
-            
-            # 尝试解析JSON
+
             try:
                 response_json = response.json()
                 send("获取帖子返回值", response_json)
@@ -289,7 +231,7 @@ class ZuoBiao:
                 error_msg = f"JSON解析失败: {e}"
                 print(f"{error_msg}\n原始响应: {response_text[:200]}...")
                 return False, error_msg
-            
+
             if response_json.get("map"):
                 self.documents = response_json['map']['rows']
                 self.set_document_record()
@@ -297,7 +239,7 @@ class ZuoBiao:
             else:
                 error_msg = response_json.get("message", "未知错误")
                 return False, error_msg
-                
+
         except requests.exceptions.RequestException as e:
             error_msg = f"网络请求异常: {str(e)}"
             print(error_msg)
@@ -306,33 +248,29 @@ class ZuoBiao:
             error_msg = f"未知错误: {str(e)}"
             print(error_msg)
             return False, error_msg
+
     def get_todo_id(self):
         '''
         获取代办任务
         :return: 返回所有代办任务id
         '''
-        # 更新请求头以使用新的伪装IP
-        send("开始请求获取代办",self.headers)
-        self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
+        send("开始请求获取代办", self.headers)
+        self._refresh_headers()
 
         try:
-            #请求代办连接
             response = requests.get(url=GET_TODO_URI, headers=self.headers, timeout=30)
-            
-            # 检查响应状态
+
             if response.status_code != 200:
                 error_msg = f"获取代办任务失败，状态码: {response.status_code}"
                 print(error_msg)
                 return False, error_msg
-            
-            # 检查响应内容
+
             response_text = response.text.strip()
             if not response_text:
                 error_msg = "收到空响应"
                 print(error_msg)
                 return False, error_msg
-            
-            # 尝试解析JSON
+
             try:
                 response_json = response.json()
                 send("开始请求获取代办响应", response_json)
@@ -340,7 +278,7 @@ class ZuoBiao:
                 error_msg = f"JSON解析失败: {e}"
                 print(f"{error_msg}\n原始响应: {response_text[:200]}...")
                 return False, error_msg
-            
+
             if response_json.get('code') == '1000':
                 self.todoList = response_json['data']
                 self.set_todo_record()
@@ -348,7 +286,7 @@ class ZuoBiao:
             else:
                 error_msg = response_json.get("message", "未知错误")
                 return False, error_msg
-                
+
         except requests.exceptions.RequestException as e:
             error_msg = f"网络请求异常: {str(e)}"
             print(error_msg)
@@ -357,31 +295,27 @@ class ZuoBiao:
             error_msg = f"未知错误: {str(e)}"
             print(error_msg)
             return False, error_msg
+
     def set_todo_record(self):
         '''
         写阅读记录
         '''
-        self.headers['Content-Type']= 'application/json'
         for todoRecord in self.todoList:
-            # 为每个请求更新伪装IP
-            self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
+            self._refresh_headers(content_type='application/json')
             self.todo['id'] = todoRecord['id']
-            response = requests.post(url=EXECUT_TODO_URI, headers=self.headers, json=self.todo).json()
+            response = requests.post(url=EXECUT_TODO_URI, headers=self.headers, json=self.todo, timeout=30).json()
             if response.get('code') == '1000':
                 send('✅代办任务成功', f'任务名称：{todoRecord["title"]}')
-                # push_dt(self.param.get('dingtalk'),'✅代办任务成功'+'\n'+f'任务名称：{todoRecord["title"]}',False,1)
             else:
                 send('❌代办任务失败', f'任务名称：{todoRecord["title"]}')
-            time.sleep(20) # 休眠20秒
+            time.sleep(20)
 
     def do_login(self):
         """通过登录来刷新会话cookie"""
         print(f"正在为账号 [{self.param.get('account')}] 尝试登录并刷新Cookie...")
-        self.headers.pop('Cookie', None)  # 移除旧的Cookie
-        # 为登录请求更新伪装IP
-        self.headers = self.ip_spoofer.generate_spoofed_headers(self.headers)
-        
-        # 修复：将loginName改为字符串而不是集合
+        self.cookie = None
+        self._refresh_headers(content_type='application/x-www-form-urlencoded')
+
         data = {'loginName': self.param.get('account'), 'password': self.param.get('password')}
 
         try:
@@ -390,30 +324,26 @@ class ZuoBiao:
             send("登录数据", data)
             send("登录状态码", response.status_code)
             send("登录响应头", dict(response.headers))
-            
-            # 检查响应状态
+
             if response.status_code != 200:
                 print(f"账号 [{self.param.get('account')}] 登录请求失败，状态码: {response.status_code}")
                 return f"账号 [{self.param.get('account')}] 登录失败，状态码: {response.status_code}"
-            
-            # 检查响应内容
+
             response_text = response.text.strip()
             if not response_text:
                 print(f"账号 [{self.param.get('account')}] 收到空响应")
                 return f"账号 [{self.param.get('account')}] 收到空响应"
-            
-            # 尝试解析JSON
+
             try:
                 response_json = response.json()
                 send("登录响应", response_json)
             except json.JSONDecodeError as e:
                 print(f"账号 [{self.param.get('account')}] JSON解析失败: {e}")
-                print(f"原始响应内容: {response_text[:200]}...")  # 只显示前200字符
+                print(f"原始响应内容: {response_text[:200]}...")
                 return f"账号 [{self.param.get('account')}] JSON解析失败"
-            
+
             set_cookie_headers = response.headers.get('set-cookie')
             if set_cookie_headers:
-                # 使用正则表达式从set-cookie头中提取SESSION和zb_sid
                 session_match = re.search(r'SESSION=([^;,\s]+)', set_cookie_headers)
                 zbsid_match = re.search(r'zb_sid=([^;,\s]+)', set_cookie_headers)
 
@@ -421,15 +351,14 @@ class ZuoBiao:
                     session_val = session_match.group(1)
                     zbsid_val = zbsid_match.group(1)
 
-                    my_cookie = f"SESSION={session_val}; zb_sid={zbsid_val}"
+                    self.cookie = f"SESSION={session_val}; zb_sid={zbsid_val}"
                     print(f'账号 [{self.param.get("account")}] 的Cookie刷新成功！')
-                    self.headers['Cookie'] = my_cookie
-                    send("开始贴子","1111111111111111")
-                    self.get_document_id() #开始获取帖子
-                    send("开始待办","1111111111111111")
-                    self.get_todo_id() #开始获取待办
-                    return f"账号 [{self.param.get('account')}]"
 
+                    send("开始贴子", "1111111111111111")
+                    self.get_document_id()
+                    send("开始待办", "1111111111111111")
+                    self.get_todo_id()
+                    return f"账号 [{self.param.get('account')}]"
                 else:
                     print(f"账号 [{self.param.get('account')}] 的Cookie解析失败，未找到SESSION或zb_sid。")
                     print(f"原始Set-Cookie头: {set_cookie_headers}")
@@ -437,7 +366,7 @@ class ZuoBiao:
             else:
                 print(f"账号 [{self.param.get('account')}] 未收到Cookie信息")
                 return f"账号 [{self.param.get('account')}] 未收到Cookie"
-                
+
         except requests.exceptions.Timeout:
             print(f"账号 [{self.param.get('account')}] 登录请求超时")
             return f"账号 [{self.param.get('account')}] 请求超时"
@@ -451,36 +380,4 @@ class ZuoBiao:
             print(f"账号 [{self.param.get('account')}] 发生未知错误: {e}")
             return f"账号 [{self.param.get('account')}] 未知错误: {str(e)}"
 
-def main():
-    '''
-    主函数
-    :return: 返回一个字符串，包含积分结果
-    '''
-    msg = ""
-    global cookie_zuobiao
-    cookie_zuobiao = get_env()
-    datas = json.loads(cookie_zuobiao)
-    print("✅ 检测到共", len(datas["ZUOBIAO"]), "个坐标账号\n")
-
-    i = 0
-    for i in range(len(datas.get("ZUOBIAO", []))):
-        _check_item = datas.get("ZUOBIAO", [])[i]
-        # 开始任务
-        # 登录
-        log = f"完成🙍🏻‍♂️ 第{i + 1}个"+ZuoBiao(_check_item).do_login()
-
-        push_dt(_check_item['dingtalk'],log,True,2)
-        msg += log + "\n"
-
-        i += 1
-    try:
-        send('开始', msg)
-    except Exception as err:
-        print('%s\n❌ 错误，请查看运行日志！' % err)
-    return msg[:-1]
-
-
-if __name__ == "__main__":
-    print("----------ZuoBiao开始刷积分----------")
-    main()
-    print("----------ZuoBiao刷积分完毕----------")
+# ... existing code ...
